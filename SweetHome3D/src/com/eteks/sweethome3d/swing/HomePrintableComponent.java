@@ -37,11 +37,7 @@ import java.awt.print.PrinterException;
 import java.awt.print.PrinterJob;
 import java.security.AccessControlException;
 import java.text.MessageFormat;
-import java.util.Date;
-import java.util.HashSet;
-import java.util.MissingResourceException;
-import java.util.ResourceBundle;
-import java.util.Set;
+import java.util.*;
 
 import javax.swing.JComponent;
 import javax.swing.JLabel;
@@ -186,244 +182,266 @@ public class HomePrintableComponent extends JComponent implements Printable {
     if (Thread.interrupted()) {
       throw new InterruptedPrinterException();
     }
-    
-    Graphics2D g2D = (Graphics2D)g;
-    g2D.setFont(this.defaultFont);
-    g2D.setColor(Color.WHITE);
-    g2D.fill(new Rectangle2D.Double(0, 0, pageFormat.getWidth(), pageFormat.getHeight()));
 
-    Paper oldPaper = pageFormat.getPaper();
+    Level startingLevel = this.home.getSelectedLevel();
+
     try {
-      // Let the user be able to force a fixed margin in case of bugs in page setup dialogs or printer drivers
-      String fixedPrintMargin = System.getProperty("com.eteks.sweethome3d.swing.fixedPrintMargin", null);
-      if (fixedPrintMargin != null) {
-        float margin = LengthUnit.centimeterToInch(Float.parseFloat(fixedPrintMargin)) * 72;
-        Paper noMarginPaper = pageFormat.getPaper();
-        noMarginPaper.setImageableArea(margin, margin, oldPaper.getWidth() - 2 * margin, oldPaper.getHeight() - 2 * margin);
-        pageFormat.setPaper(noMarginPaper);
+      List<Level> viewableLevels = new ArrayList<>();
+      for (Level level: this.home.getLevels()) {
+        if(level.isViewable()) {
+          viewableLevels.add(level);
+        }
       }
-    } catch (NumberFormatException ex) {
-      ex.printStackTrace();
-    } catch (AccessControlException ex) {
-      // If com.eteks.sweethome3d.swing.fixedPrintMargin can't be read, ignore fixed margin
-    }
-    int pageExists = NO_SUCH_PAGE;
-    HomePrint homePrint = this.home.getPrint();
-    
-    // Prepare header and footer
-    float imageableY = (float)pageFormat.getImageableY();
-    float imageableHeight = (float)pageFormat.getImageableHeight();
-    String header = null;
-    float  xHeader = 0;
-    float  yHeader = 0;
-    float  xFixedHeader = 0;
-    float  yFixedHeader = 0;
-    String footer = null;
-    float  xFooter = 0;
-    float  yFooter = 0;
-    float  xFixedFooter = 0;
-    float  yFixedFooter = 0;
-    
-    JLabel fixedHeaderPageLabel = page == 0
-        ? this.fixedFirstPageHeaderLabel : this.fixedHeaderLabel;
-    JLabel fixedFooterPageLabel = page == 0
-        ? this.fixedFirstPageFooterLabel : this.fixedFooterLabel;
-    if (fixedHeaderPageLabel != null) {
-      fixedHeaderPageLabel.setSize((int)pageFormat.getImageableWidth(), fixedHeaderPageLabel.getPreferredSize().height);
-      imageableHeight -= fixedHeaderPageLabel.getHeight() + HEADER_FOOTER_MARGIN;
-      imageableY += fixedHeaderPageLabel.getHeight() + HEADER_FOOTER_MARGIN;
-      xFixedHeader = (float)pageFormat.getImageableX();
-      yFixedHeader = (float)pageFormat.getImageableY();
-    }
-    
-    if (fixedFooterPageLabel != null) {
-      fixedFooterPageLabel.setSize((int)pageFormat.getImageableWidth(), fixedFooterPageLabel.getPreferredSize().height);
-      imageableHeight -= fixedFooterPageLabel.getHeight() + HEADER_FOOTER_MARGIN;
-      xFixedFooter = (float)pageFormat.getImageableX();
-      yFixedFooter = (float)(pageFormat.getImageableY() + pageFormat.getImageableHeight()) - fixedFooterPageLabel.getHeight();
-    }
-    
-    Rectangle clipBounds = g2D.getClipBounds();
-    AffineTransform oldTransform = g2D.getTransform();
-    final PlanView planView = this.controller.getPlanController().getView();
-    if (homePrint != null
-        || fixedHeaderPageLabel != null
-        || fixedFooterPageLabel != null) {
-      if (homePrint != null) {
-        FontMetrics fontMetrics = g2D.getFontMetrics(this.headerFooterFont);
-        float headerFooterHeight = fontMetrics.getAscent() + fontMetrics.getDescent() + HEADER_FOOTER_MARGIN;
-        
-        // Retrieve variable values
-        int pageNumber = page + 1; 
-        int pageCount = getPageCount(); 
-        String planScale = "?";
-        if (homePrint.getPlanScale() != null) {
-          planScale = "1/" + Math.round(1 / homePrint.getPlanScale());
+
+      // Furniture table prints first, so we have to subtract those pages to find the index of the floor plan
+      int floorIndex = page - this.furniturePageCount;
+      // Default is to print everything when the print object does not exist
+      boolean isPrinted = (this.home.getPrint() == null || this.home.getPrint().isPlanPrinted());
+      if(isPrinted && floorIndex >= 0 && floorIndex < viewableLevels.size()) {
+        this.home.setSelectedLevel(viewableLevels.get(floorIndex));
+      }
+
+      Graphics2D g2D = (Graphics2D) g;
+      g2D.setFont(this.defaultFont);
+      g2D.setColor(Color.WHITE);
+      g2D.fill(new Rectangle2D.Double(0, 0, pageFormat.getWidth(), pageFormat.getHeight()));
+
+      Paper oldPaper = pageFormat.getPaper();
+      try {
+        // Let the user be able to force a fixed margin in case of bugs in page setup dialogs or printer drivers
+        String fixedPrintMargin = System.getProperty("com.eteks.sweethome3d.swing.fixedPrintMargin", null);
+        if (fixedPrintMargin != null) {
+          float margin = LengthUnit.centimeterToInch(Float.parseFloat(fixedPrintMargin)) * 72;
+          Paper noMarginPaper = pageFormat.getPaper();
+          noMarginPaper.setImageableArea(margin, margin, oldPaper.getWidth() - 2 * margin, oldPaper.getHeight() - 2 * margin);
+          pageFormat.setPaper(noMarginPaper);
+        }
+      } catch (NumberFormatException ex) {
+        ex.printStackTrace();
+      } catch (AccessControlException ex) {
+        // If com.eteks.sweethome3d.swing.fixedPrintMargin can't be read, ignore fixed margin
+      }
+      int pageExists = NO_SUCH_PAGE;
+      HomePrint homePrint = this.home.getPrint();
+
+      // Prepare header and footer
+      float imageableY = (float) pageFormat.getImageableY();
+      float imageableHeight = (float) pageFormat.getImageableHeight();
+      String header = null;
+      float xHeader = 0;
+      float yHeader = 0;
+      float xFixedHeader = 0;
+      float yFixedHeader = 0;
+      String footer = null;
+      float xFooter = 0;
+      float yFooter = 0;
+      float xFixedFooter = 0;
+      float yFixedFooter = 0;
+
+      JLabel fixedHeaderPageLabel = page == 0
+              ? this.fixedFirstPageHeaderLabel : this.fixedHeaderLabel;
+      JLabel fixedFooterPageLabel = page == 0
+              ? this.fixedFirstPageFooterLabel : this.fixedFooterLabel;
+      if (fixedHeaderPageLabel != null) {
+        fixedHeaderPageLabel.setSize((int) pageFormat.getImageableWidth(), fixedHeaderPageLabel.getPreferredSize().height);
+        imageableHeight -= fixedHeaderPageLabel.getHeight() + HEADER_FOOTER_MARGIN;
+        imageableY += fixedHeaderPageLabel.getHeight() + HEADER_FOOTER_MARGIN;
+        xFixedHeader = (float) pageFormat.getImageableX();
+        yFixedHeader = (float) pageFormat.getImageableY();
+      }
+
+      if (fixedFooterPageLabel != null) {
+        fixedFooterPageLabel.setSize((int) pageFormat.getImageableWidth(), fixedFooterPageLabel.getPreferredSize().height);
+        imageableHeight -= fixedFooterPageLabel.getHeight() + HEADER_FOOTER_MARGIN;
+        xFixedFooter = (float) pageFormat.getImageableX();
+        yFixedFooter = (float) (pageFormat.getImageableY() + pageFormat.getImageableHeight()) - fixedFooterPageLabel.getHeight();
+      }
+
+      Rectangle clipBounds = g2D.getClipBounds();
+      AffineTransform oldTransform = g2D.getTransform();
+      final PlanView planView = this.controller.getPlanController().getView();
+      if (homePrint != null
+              || fixedHeaderPageLabel != null
+              || fixedFooterPageLabel != null) {
+        if (homePrint != null) {
+          FontMetrics fontMetrics = g2D.getFontMetrics(this.headerFooterFont);
+          float headerFooterHeight = fontMetrics.getAscent() + fontMetrics.getDescent() + HEADER_FOOTER_MARGIN;
+
+          // Retrieve variable values
+          int pageNumber = page + 1;
+          int pageCount = getPageCount();
+          String planScale = "?";
+          if (homePrint.getPlanScale() != null) {
+            planScale = "1/" + Math.round(1 / homePrint.getPlanScale());
+          } else {
+            Float preferredScale = null;
+            // Should create an interface to test if the component has a preferred scale
+            if (planView instanceof PlanComponent) {
+              preferredScale = ((PlanComponent) planView).getPrintPreferredScale(g, pageFormat);
+            } else if (planView instanceof MultipleLevelsPlanPanel) {
+              preferredScale = ((MultipleLevelsPlanPanel) planView).getPrintPreferredScale(g, pageFormat);
+            }
+            if (preferredScale != null) {
+              planScale = "1/" + Math.round(1 / preferredScale);
+            }
+          }
+          if (page == 0) {
+            this.printDate = new Date();
+          }
+          String homeName = this.home.getName();
+          if (homeName == null) {
+            homeName = "";
+          }
+          String levelName = "";
+          if (this.home.getSelectedLevel() != null) {
+            levelName = this.home.getSelectedLevel().getName();
+          }
+          String homePresentationName = this.controller.getContentManager().getPresentationName(
+                  homeName, ContentManager.ContentType.SWEET_HOME_3D);
+          Object[] variableValues = new Object[]{
+                  pageNumber, pageCount, planScale, this.printDate, homePresentationName, homeName, levelName};
+
+          // Create header text
+          String headerFormat = homePrint.getHeaderFormat();
+          if (headerFormat != null) {
+            header = Variable.getMessageFormat(headerFormat).format(variableValues).trim();
+            if (header.length() > 0) {
+              xHeader = ((float) pageFormat.getWidth() - fontMetrics.stringWidth(header)) / 2;
+              yHeader = imageableY + fontMetrics.getAscent();
+              imageableY += headerFooterHeight;
+              imageableHeight -= headerFooterHeight;
+            } else {
+              header = null;
+            }
+          }
+
+          // Create footer text
+          String footerFormat = homePrint.getFooterFormat();
+          if (footerFormat != null) {
+            footer = Variable.getMessageFormat(footerFormat).format(variableValues).trim();
+            if (footer.length() > 0) {
+              xFooter = ((float) pageFormat.getWidth() - fontMetrics.stringWidth(footer)) / 2;
+              yFooter = imageableY + imageableHeight - fontMetrics.getDescent();
+              imageableHeight -= headerFooterHeight;
+            } else {
+              footer = null;
+            }
+          }
+        }
+
+        // Update page format paper margins depending on paper orientation
+        Paper paper = pageFormat.getPaper();
+        switch (pageFormat.getOrientation()) {
+          case PageFormat.PORTRAIT:
+            paper.setImageableArea(paper.getImageableX(), imageableY,
+                    paper.getImageableWidth(), imageableHeight);
+            break;
+          case PageFormat.LANDSCAPE:
+            paper.setImageableArea(paper.getWidth() - (imageableHeight + imageableY),
+                    paper.getImageableY(),
+                    imageableHeight, paper.getImageableHeight());
+          case PageFormat.REVERSE_LANDSCAPE:
+            paper.setImageableArea(imageableY, paper.getImageableY(),
+                    imageableHeight, paper.getImageableHeight());
+            break;
+        }
+        pageFormat.setPaper(paper);
+
+        if (clipBounds == null) {
+          g2D.clipRect((int) pageFormat.getImageableX(), (int) pageFormat.getImageableY(),
+                  (int) pageFormat.getImageableWidth(), (int) pageFormat.getImageableHeight());
         } else {
-          Float preferredScale = null;
-          // Should create an interface to test if the component has a preferred scale
-          if (planView instanceof PlanComponent) {
-            preferredScale = ((PlanComponent)planView).getPrintPreferredScale(g, pageFormat);
-          } else if (planView instanceof MultipleLevelsPlanPanel) {
-            preferredScale = ((MultipleLevelsPlanPanel)planView).getPrintPreferredScale(g, pageFormat);
-          }     
-          if (preferredScale != null) {
-            planScale = "1/" + Math.round(1 / preferredScale);
-          }
-        }          
-        if (page == 0) {
-          this.printDate = new Date();
-        }
-        String homeName = this.home.getName();
-        if (homeName == null) {
-          homeName = "";
-        }
-        String levelName = "";
-        if (this.home.getSelectedLevel() != null) {
-          levelName = this.home.getSelectedLevel().getName();
-        }
-        String homePresentationName = this.controller.getContentManager().getPresentationName(
-             homeName, ContentManager.ContentType.SWEET_HOME_3D);
-        Object [] variableValues = new Object [] {
-            pageNumber, pageCount, planScale, this.printDate, homePresentationName, homeName, levelName};
-        
-        // Create header text
-        String headerFormat = homePrint.getHeaderFormat();      
-        if (headerFormat != null) {
-          header = Variable.getMessageFormat(headerFormat).format(variableValues).trim();
-          if (header.length() > 0) {
-            xHeader = ((float)pageFormat.getWidth() - fontMetrics.stringWidth(header)) / 2;
-            yHeader = imageableY + fontMetrics.getAscent();
-            imageableY += headerFooterHeight;
-            imageableHeight -= headerFooterHeight;
-          } else {
-            header = null;
-          }
-        }
-        
-        // Create footer text
-        String footerFormat = homePrint.getFooterFormat();
-        if (footerFormat != null) {
-          footer = Variable.getMessageFormat(footerFormat).format(variableValues).trim();
-          if (footer.length() > 0) {
-            xFooter = ((float)pageFormat.getWidth() - fontMetrics.stringWidth(footer)) / 2;
-            yFooter = imageableY + imageableHeight - fontMetrics.getDescent();
-            imageableHeight -= headerFooterHeight;
-          } else {
-            footer = null;
-          }
+          g2D.clipRect(clipBounds.x, (int) pageFormat.getImageableY(),
+                  clipBounds.width, (int) pageFormat.getImageableHeight());
         }
       }
-      
-      // Update page format paper margins depending on paper orientation
-      Paper paper = pageFormat.getPaper();
-      switch (pageFormat.getOrientation()) {
-        case PageFormat.PORTRAIT:
-          paper.setImageableArea(paper.getImageableX(), imageableY, 
-              paper.getImageableWidth(), imageableHeight);
-          break;
-        case PageFormat.LANDSCAPE :
-          paper.setImageableArea(paper.getWidth() - (imageableHeight + imageableY), 
-              paper.getImageableY(), 
-              imageableHeight, paper.getImageableHeight());
-        case PageFormat.REVERSE_LANDSCAPE:
-          paper.setImageableArea(imageableY, paper.getImageableY(), 
-              imageableHeight, paper.getImageableHeight());
-          break;
-      }
-      pageFormat.setPaper(paper);
-      
-      if (clipBounds == null) {
-        g2D.clipRect((int)pageFormat.getImageableX(), (int)pageFormat.getImageableY(), 
-            (int)pageFormat.getImageableWidth(), (int)pageFormat.getImageableHeight());
-      } else {  
-        g2D.clipRect(clipBounds.x, (int)pageFormat.getImageableY(), 
-            clipBounds.width, (int)pageFormat.getImageableHeight());
-      }
-    }
-    
-    View furnitureView = this.controller.getFurnitureController().getView();
-    if (furnitureView != null 
-        && (homePrint == null || homePrint.isFurniturePrinted())) {
-      FurnitureTable furnitureTable = null;
-      final FurnitureTable.FurnitureFilter furnitureFilter;
-      if (furnitureView instanceof FurnitureTable
-          && (homePrint == null
-              || homePrint.isPlanPrinted()
-              || homePrint.isView3DPrinted())) {
-        final Level selectedLevel = home.getSelectedLevel();
-        furnitureTable = (FurnitureTable)furnitureView;
-        furnitureFilter = furnitureTable.getFurnitureFilter();
-        furnitureTable.setFurnitureFilter(new FurnitureTable.FurnitureFilter() {
+
+      View furnitureView = this.controller.getFurnitureController().getView();
+      if (furnitureView != null
+              && (homePrint == null || homePrint.isFurniturePrinted())) {
+        FurnitureTable furnitureTable = null;
+        final FurnitureTable.FurnitureFilter furnitureFilter;
+        if (furnitureView instanceof FurnitureTable
+                && (homePrint == null
+                || homePrint.isPlanPrinted()
+                || homePrint.isView3DPrinted())) {
+          final Level selectedLevel = home.getSelectedLevel();
+          furnitureTable = (FurnitureTable) furnitureView;
+          furnitureFilter = furnitureTable.getFurnitureFilter();
+          furnitureTable.setFurnitureFilter(new FurnitureTable.FurnitureFilter() {
             public boolean include(Home home, HomePieceOfFurniture piece) {
               // Print only furniture at selected level when the plan or the 3D view is printed
               return (furnitureFilter == null || furnitureFilter.include(home, piece))
-                  && piece.isAtLevel(selectedLevel)
-                  && (piece.getLevel() == null || piece.getLevel().isViewable());
+                      && (piece.getLevel() == null || piece.getLevel().isViewable());
             }
           });
-      } else {
-        furnitureFilter = null;
+        } else {
+          furnitureFilter = null;
+        }
+        // Try to print next furniture view page
+        pageExists = ((Printable) furnitureView).print(g2D, pageFormat, page);
+        if (furnitureTable != null) {
+          // Restore previous filter
+          ((FurnitureTable) furnitureView).setFurnitureFilter(furnitureFilter);
+        }
+        if (pageExists == PAGE_EXISTS
+                && !this.printablePages.contains(page)) {
+          this.printablePages.add(page);
+          this.furniturePageCount++;
+        }
       }
-      // Try to print next furniture view page      
-      pageExists = ((Printable)furnitureView).print(g2D, pageFormat, page);
-      if (furnitureTable != null) {
-        // Restore previous filter
-        ((FurnitureTable)furnitureView).setFurnitureFilter(furnitureFilter);
+      if (pageExists == NO_SUCH_PAGE
+              && planView != null
+              && (homePrint == null || homePrint.isPlanPrinted())) {
+
+        pageExists = ((Printable) planView).print(g2D, pageFormat, page - this.furniturePageCount);
+
+        if (pageExists == PAGE_EXISTS
+                && !this.printablePages.contains(page)) {
+          this.printablePages.add(page);
+          this.planPageCount++;
+        }
       }
-      if (pageExists == PAGE_EXISTS
-          && !this.printablePages.contains(page)) {
-        this.printablePages.add(page);
-        this.furniturePageCount++;
+      View view3D = this.controller.getHomeController3D().getView();
+      if (pageExists == NO_SUCH_PAGE
+              && view3D != null
+              && (homePrint == null || homePrint.isView3DPrinted())) {
+        pageExists = ((Printable) view3D).print(g2D, pageFormat, page - this.planPageCount - this.furniturePageCount);
+        if (pageExists == PAGE_EXISTS
+                && !this.printablePages.contains(page)) {
+          this.printablePages.add(page);
+        }
       }
+
+      // Print header and footer
+      if (pageExists == PAGE_EXISTS) {
+        g2D.setTransform(oldTransform);
+        g2D.setClip(clipBounds);
+        g2D.setFont(this.headerFooterFont);
+        g2D.setColor(Color.BLACK);
+        if (fixedHeaderPageLabel != null) {
+          g2D.translate(xFixedHeader, yFixedHeader);
+          fixedHeaderPageLabel.print(g2D);
+          g2D.translate(-xFixedHeader, -yFixedHeader);
+        }
+        if (header != null) {
+          g2D.drawString(header, xHeader, yHeader);
+        }
+        if (footer != null) {
+          g2D.drawString(footer, xFooter, yFooter);
+        }
+        if (fixedFooterPageLabel != null) {
+          g2D.translate(xFixedFooter, yFixedFooter);
+          fixedFooterPageLabel.print(g2D);
+          g2D.translate(-xFixedFooter, -yFixedFooter);
+        }
+      }
+      pageFormat.setPaper(oldPaper);
+      return pageExists;
+    } finally {
+      // Restores original level that was selected before printing
+      this.home.setSelectedLevel(startingLevel);
     }
-    if (pageExists == NO_SUCH_PAGE 
-        && planView != null 
-        && (homePrint == null || homePrint.isPlanPrinted())) {
-      // Try to print next plan view page
-      pageExists = ((Printable)planView).print(g2D, pageFormat, page - this.furniturePageCount);
-      if (pageExists == PAGE_EXISTS
-          && !this.printablePages.contains(page)) {
-        this.printablePages.add(page);
-        this.planPageCount++;
-      }
-    }
-    View view3D = this.controller.getHomeController3D().getView();
-    if (pageExists == NO_SUCH_PAGE
-        && view3D != null
-        && (homePrint == null || homePrint.isView3DPrinted())) {
-      pageExists = ((Printable)view3D).print(g2D, pageFormat, page - this.planPageCount - this.furniturePageCount);
-      if (pageExists == PAGE_EXISTS
-          && !this.printablePages.contains(page)) {
-        this.printablePages.add(page);
-      }
-    }
-    
-    // Print header and footer
-    if (pageExists == PAGE_EXISTS) {
-      g2D.setTransform(oldTransform);
-      g2D.setClip(clipBounds);
-      g2D.setFont(this.headerFooterFont);
-      g2D.setColor(Color.BLACK);
-      if (fixedHeaderPageLabel != null) {
-        g2D.translate(xFixedHeader, yFixedHeader);
-        fixedHeaderPageLabel.print(g2D);
-        g2D.translate(-xFixedHeader, -yFixedHeader);
-      }
-      if (header != null) {
-        g2D.drawString(header, xHeader, yHeader);
-      }
-      if (footer != null) {
-        g2D.drawString(footer, xFooter, yFooter);
-      }
-      if (fixedFooterPageLabel != null) {
-        g2D.translate(xFixedFooter, yFixedFooter);
-        fixedFooterPageLabel.print(g2D);
-        g2D.translate(-xFixedFooter, -yFixedFooter);
-      }
-    }  
-    pageFormat.setPaper(oldPaper);    
-    return pageExists;
   }
 
   /**
